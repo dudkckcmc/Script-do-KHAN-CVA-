@@ -1,0 +1,222 @@
+javascript:(async () => {
+    let loadedScripts = [];
+    console.clear();
+
+    const loaderDiv = document.createElement('div');
+
+    class EventEmitter {
+        constructor() {
+            this.events = {};
+        }
+        on(event, listener) {
+            (Array.isArray(event) ? event : [event]).forEach(e => {
+                this.events[e] = this.events[e] || [];
+                this.events[e].push(listener);
+            });
+        }
+        off(event, listener) {
+            (Array.isArray(event) ? event : [event]).forEach(e => {
+                if (this.events[e]) {
+                    this.events[e] = this.events[e].filter(l => l !== listener);
+                }
+            });
+        }
+        emit(event, ...args) {
+            this.events[event]?.forEach(listener => listener(...args));
+        }
+        once(event, listener) {
+            const onceWrapper = (...args) => {
+                listener(...args);
+                this.off(event, onceWrapper);
+            };
+            this.on(event, onceWrapper);
+        }
+    }
+
+    const eventEmitter = new EventEmitter();
+
+    new MutationObserver(mutations => {
+        if (mutations.some(m => m.type === 'childList')) {
+            eventEmitter.emit('domChanged');
+        }
+    }).observe(document.body, { childList: true, subtree: true });
+
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+    const clickSelector = sel => document.querySelector(sel)?.click();
+    const showToast = (text, duration = 5000) => {
+        Toastify({
+            text,
+            duration,
+            gravity: 'bottom',
+            position: 'center',
+            stopOnFocus: true,
+            style: { background: '#000' }
+        }).showToast();
+    };
+
+    const showLoader = async () => {
+        loaderDiv.style.cssText = `
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+            font-family: sans-serif;
+            color: white;
+            user-select: none;
+        `;
+        loaderDiv.innerHTML = `
+            <div style="font-size: 3rem; animation: pulse 1.5s infinite;">
+                KHAN <span style="color: #ffeb3b;">CVA</span> 🚀
+            </div>
+            <div style="margin-top: 10px; font-size: 2.5rem; animation: blink 1s infinite;">
+                CARREGANDO...
+            </div>
+            <style>
+                @keyframes pulse {
+                    0% { transform: scale(1); }
+                    50% { transform: scale(1.1); }
+                    100% { transform: scale(1); }
+                }
+                @keyframes blink {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+            </style>
+        `;
+        document.body.appendChild(loaderDiv);
+        setTimeout(() => loaderDiv.style.opacity = '1', 10);
+    };
+
+    const hideLoader = async () => {
+        loaderDiv.style.opacity = '0';
+        setTimeout(() => loaderDiv.remove(), 1000);
+    };
+
+    const loadScript = async (url, name) => {
+        const res = await fetch(url);
+        const text = await res.text();
+        loadedScripts.push(name);
+        eval(text);
+    };
+
+    const loadCSS = url => new Promise(resolve => {
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = url;
+        link.onload = resolve;
+        document.head.appendChild(link);
+    });
+
+    const overrideFetch = () => {
+        const originalFetch = window.fetch;
+        window.fetch = async function (input, init) {
+            let body;
+            if (input instanceof Request) {
+                body = await input.clone().text();
+            } else if (init?.body) {
+                body = init.body;
+            }
+
+            if (body?.includes('"operationName":"updateUserVideoProgress"')) {
+                try {
+                    let json = JSON.parse(body);
+                    if (json.variables?.input) {
+                        json.variables.input.secondsWatched = json.variables.input.durationSeconds;
+                        json.variables.input.lastSecondWatched = json.variables.input.durationSeconds;
+                        body = JSON.stringify(json);
+                        if (input instanceof Request) {
+                            input = new Request(input, { body });
+                        } else {
+                            init.body = body;
+                        }
+                        showToast("Vídeo exploitado.", 1000);
+                    }
+                } catch (e) { }
+            }
+
+            const response = await originalFetch.apply(this, arguments);
+            try {
+                const clonedText = await response.clone().text();
+                const json = JSON.parse(clonedText);
+                if (json?.data?.assessmentItem?.item?.itemData) {
+                    let itemData = JSON.parse(json.data.assessmentItem.item.itemData);
+                    if (itemData.question.content[0] === itemData.question.content[0].toUpperCase()) {
+                        itemData.answerArea = {
+                            calculator: false,
+                            chi2Table: false,
+                            periodicTable: false,
+                            tTable: false,
+                            zTable: false
+                        };
+                        itemData.question.content = "🔮Desenvolvido por: Marcos Tutoriais (𝓒𝓥𝓐)🔮 [[☃ radio 1]]";
+                        itemData.question.widgets = {
+                            "radio 1": {
+                                type: "radio",
+                                options: {
+                                    choices: [{ content: "✔️", correct: true }]
+                                }
+                            }
+                        };
+                        json.data.assessmentItem.item.itemData = JSON.stringify(itemData);
+                        return new Response(JSON.stringify(json), {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers
+                        });
+                    }
+                }
+            } catch (e) { }
+            return response;
+        };
+    };
+
+    const automateTasks = async () => {
+        const selectors = [
+            '[data-testid="choice-icon__library-choice-icon"]',
+            '[data-testid="exercise-check-answer"]',
+            '[data-testid="exercise-next-question"]',
+            '._1udzurba',
+            '._awve9b'
+        ];
+        window.khanwareDominates = true;
+        while (window.khanwareDominates) {
+            for (const sel of selectors) {
+                clickSelector(sel);
+                const el = document.querySelector(`${sel} > div`);
+                if (el?.innerText === "Mostrar resumo") {
+                    showToast("🎉 Exercício concluído!", 3000);
+                }
+            }
+            await wait(1500);
+        }
+    };
+
+    if (!/^https?:\/\/([a-z0-9-]+\.)?khanacademy\.org/.test(location.href)) {
+        location.href = 'https://pt.khanacademy.org/';
+    } else {
+        await showLoader();
+        await Promise.all([
+            loadScript('https://cdn.jsdelivr.net/npm/darkreader@4.9.92/darkreader.min.js', 'darkReader').then(() => {
+                DarkReader.setFetchMethod(window.fetch);
+                DarkReader.enable();
+            }),
+            loadCSS('https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css'),
+            loadScript('https://cdn.jsdelivr.net/npm/toastify-js', 'toastify')
+        ]);
+        await wait(2000);
+        await hideLoader();
+        overrideFetch();
+        showToast("✔️ Seja bem-vindo ao (𝓒𝓥𝓐) ! 🥳");
+        console.clear();
+        showToast("📚 Khan(𝓒𝓥𝓐) iniciado! 🔮");
+        console.clear();
+        automateTasks();
+    }
+})();
